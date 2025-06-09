@@ -20,7 +20,7 @@ flowchart TD
     end
     
     subgraph "Member Account 1"
-        Inspector1[AWS Inspector<br>Agent]
+        Inspector1[AWS Inspector]
         Resources1[EC2/ECR/Lambda<br>Resources]
         
         Resources1 -->|Scanned by| Inspector1
@@ -29,7 +29,7 @@ flowchart TD
     end
     
     subgraph "Member Account 2"
-        Inspector2[AWS Inspector<br>Agent]
+        Inspector2[AWS Inspector]
         Resources2[EC2/ECR/Lambda<br>Resources]
         
         Resources2 -->|Scanned by| Inspector2
@@ -38,7 +38,7 @@ flowchart TD
     end
     
     subgraph "Member Account 3"
-        Inspector3[AWS Inspector<br>Agent]
+        Inspector3[AWS Inspector]
         Resources3[EC2/ECR/Lambda<br>Resources]
         
         Resources3 -->|Scanned by| Inspector3
