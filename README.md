@@ -85,7 +85,7 @@ For most security operations teams, using IAM Identity Center with multiple perm
 2. **Specialized permission sets for member accounts** for investigation and remediation
 3. **Role-based permissions** tailored to specific job functions
 
-## S3 Bucket Policy for Inspector Reports
+## S3 Bucket Policy for AWS Inspector Reports: Explained
 
 ```json
 {
@@ -115,6 +115,43 @@ For most security operations teams, using IAM Identity Center with multiple perm
   ]
 }
 ```
+
+### How This S3 Bucket Policy Works
+
+This policy controls how AWS Inspector can upload reports to the `ims-security-report` bucket in your security account:
+
+1. **Who can access**: Only the AWS Inspector service (`inspector2.amazonaws.com`) can perform the allowed actions.
+
+2. **What they can do**: The policy allows three specific operations:
+   - `s3:PutObject`: Upload report files
+   - `s3:PutObjectAcl`: Set permissions on uploaded reports
+   - `s3:AbortMultipartUpload`: Cancel incomplete uploads
+
+3. **Where they can do it**: These actions are restricted to objects within the `ims-security-report` bucket.
+
+4. **Security conditions**: The `Condition` block adds critical security constraints:
+   - `${aws:PrincipalAccount}` is a variable that represents the AWS account ID making the request
+   - In a delegated admin setup, this will be the security account ID
+   - The policy ensures the source account matches the account in the ARN
+
+### Account Access Breakdown
+
+In your multi-account setup:
+
+1. **Who can generate reports**: 
+   - Only the security account (delegated admin) can generate reports
+   - Member accounts do not generate reports directly; their findings flow to the delegated admin
+
+2. **What `${aws:PrincipalAccount}` means**:
+   - It will be the security account ID (delegated admin)
+   - The variable dynamically resolves to the account ID of the AWS service making the request
+
+3. **Access pattern**:
+   - AWS Inspector in the security account aggregates findings from all accounts
+   - When generating reports, Inspector in the security account writes to the S3 bucket
+   - The condition ensures only Inspector from the security account can write to the bucket
+
+This policy implements the principle of least privilege while allowing Inspector to function properly in a multi-account environment. The security conditions prevent confused deputy attacks by ensuring the service can only act on behalf of the account it's running in.
 
 ## Security Account Permission Sets
 
