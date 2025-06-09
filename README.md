@@ -9,12 +9,14 @@ flowchart TD
         SecurityHub[Security Hub]
         S3[S3 Bucket<br>ims-security-report]
         SecOps[Security Operations Team]
+        IAMIdentityCenter[IAM Identity Center]
         
         Inspector -->|Findings| SecurityHub
         Inspector -->|Reports| S3
         SecOps -->|Access| Inspector
         SecOps -->|Access| SecurityHub
         SecOps -->|Access| S3
+        SecOps -->|Authenticate| IAMIdentityCenter
     end
     
     subgraph "Member Account 1"
@@ -23,6 +25,7 @@ flowchart TD
         
         Resources1 -->|Scanned by| Inspector1
         Inspector1 -->|Findings| Inspector
+        IAMIdentityCenter -->|Permission Set| Resources1
     end
     
     subgraph "Member Account 2"
@@ -31,6 +34,7 @@ flowchart TD
         
         Resources2 -->|Scanned by| Inspector2
         Inspector2 -->|Findings| Inspector
+        IAMIdentityCenter -->|Permission Set| Resources2
     end
     
     subgraph "Member Account 3"
@@ -39,6 +43,7 @@ flowchart TD
         
         Resources3 -->|Scanned by| Inspector3
         Inspector3 -->|Findings| Inspector
+        IAMIdentityCenter -->|Permission Set| Resources3
     end
 ```
 
@@ -70,15 +75,14 @@ In a multi-account AWS Inspector deployment, the security operations team requir
 **Limitations:**
 - More complex access management
 - Increased security risk surface
-- Requires cross-account role management
 - More difficult to maintain least privilege
 
-## Recommended Access Model: Hybrid Approach
+## Recommended Access Model: IAM Identity Center Permission Sets
 
-For most security operations teams, a hybrid approach is recommended:
+For most security operations teams, using IAM Identity Center with multiple permission sets is recommended:
 
-1. **Primary access through the security account** for day-to-day operations
-2. **Break-glass access to member accounts** for investigation and remediation
+1. **Primary permission set for the security account** for day-to-day operations
+2. **Specialized permission sets for member accounts** for investigation and remediation
 3. **Role-based permissions** tailored to specific job functions
 
 ## S3 Bucket Policy for Inspector Reports
@@ -112,7 +116,7 @@ For most security operations teams, a hybrid approach is recommended:
 }
 ```
 
-## Role-Based Permission Sets
+## Security Account Permission Sets
 
 ### 1. Inspector Security Analyst (Day-to-Day Monitoring)
 
@@ -300,9 +304,11 @@ For most security operations teams, a hybrid approach is recommended:
 }
 ```
 
-## Cross-Account Access for Remediation
+## Member Account Permission Sets
 
-For security team members who need to investigate and remediate issues in member accounts, create a cross-account role with appropriate permissions:
+Instead of cross-account roles, you can create these permission sets in IAM Identity Center to be assigned directly to users for member account access:
+
+### 1. Inspector Remediation Specialist
 
 ```json
 {
@@ -310,43 +316,167 @@ For security team members who need to investigate and remediate issues in member
   "Statement": [
     {
       "Effect": "Allow",
-      "Principal": {
-        "AWS": "arn:aws:iam::SECURITY_ACCOUNT_ID:role/InspectorRemediationRole"
-      },
-      "Action": "sts:AssumeRole",
-      "Condition": {
-        "StringEquals": {
-          "aws:PrincipalOrgID": "o-ORGANIZATION_ID"
-        }
-      }
+      "Action": [
+        "inspector2:List*",
+        "inspector2:Get*",
+        "inspector2:Describe*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:CreateTags",
+        "ec2:CreateSnapshot",
+        "ssm:SendCommand",
+        "ssm:GetCommandInvocation",
+        "ssm:DescribeInstanceInformation"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:DescribeImages",
+        "ecr:BatchGetImage",
+        "ecr:PutImageScanningConfiguration"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:UpdateFunctionCode",
+        "lambda:GetLayerVersion"
+      ],
+      "Resource": "*"
     }
   ]
 }
 ```
 
-## Conclusion: Is Security Account Access Sufficient?
+### 2. Inspector Read-Only Investigator
 
-**For most day-to-day operations**, access to the security account with Inspector delegated administrator is sufficient. The security operations team can:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "inspector2:List*",
+        "inspector2:Get*",
+        "inspector2:Describe*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeImages",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSecurityGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:DescribeImages",
+        "ecr:DescribeRepositories"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:GetPolicy",
+        "lambda:ListVersionsByFunction"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeInstanceInformation",
+        "ssm:ListInventoryEntries",
+        "ssm:GetInventory"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
-- View all findings across the organization
-- Generate reports and dashboards
-- Configure Inspector settings
-- Manage suppression rules and filters
+### 3. Emergency Patching Specialist
 
-**However, for effective remediation and investigation**, limited access to member accounts is necessary. This should be implemented through:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:SendCommand",
+        "ssm:GetCommandInvocation",
+        "ssm:DescribeInstanceInformation",
+        "ssm:CreateAssociation",
+        "ssm:StartAssociationsOnce"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:DocumentName": [
+            "AWS-RunPatchBaseline",
+            "AWS-InstallMissingWindowsUpdates",
+            "AWS-ConfigureWindowsUpdate"
+          ]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:CreateTags"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
-1. **Cross-account roles** with specific permissions
-2. **Just-in-time access** with approval workflows
-3. **Session monitoring** for all cross-account activities
+## Conclusion: Using Permission Sets vs. Cross-Account Roles
 
-The ideal approach is to provide primary access through the security account for monitoring and reporting, with controlled, audited access to member accounts for remediation activities. This balances operational efficiency with security best practices.
+Using IAM Identity Center permission sets instead of cross-account roles offers several advantages:
+
+**Advantages of Permission Sets:**
+- **Centralized management** of all permissions through IAM Identity Center
+- **Simplified user experience** with single sign-on to all accounts
+- **Consistent access control** across the organization
+- **Easier permission updates** through permission set modifications
+- **Better visibility** into who has access to which accounts
+- **Session management** with configurable session durations
+- **Reduced credential management** for users
+
+**When to use this approach:**
+- When your organization is using AWS Organizations
+- When you have IAM Identity Center already configured
+- When you need to grant multiple team members access to multiple accounts
+- When you want to enforce consistent access patterns
 
 ## Implementation Best Practices
 
-1. **Use AWS IAM Identity Center** to manage permission sets
-2. **Implement attribute-based access control (ABAC)** using tags
-3. **Enable AWS CloudTrail** for comprehensive audit trails
-4. **Create custom dashboards** in Security Hub for visibility
-5. **Automate remediation workflows** where possible to reduce the need for direct member account access
-6. **Regularly review and rotate credentials** for cross-account access
-7. **Implement session duration limits** for sensitive operations
+1. **Create permission set groups** based on job functions
+2. **Assign multiple permission sets** to users based on their responsibilities
+3. **Use session duration limits** for sensitive operations
+4. **Enable AWS CloudTrail** for comprehensive audit trails
+5. **Create custom dashboards** in Security Hub for visibility
+6. **Implement attribute-based access control (ABAC)** using tags
+7. **Regularly review permissions** and remove unnecessary access
+8. **Configure MFA** for all IAM Identity Center users
+9. **Use just-in-time access** for emergency remediation permissions
